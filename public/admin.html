@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>پنل ادمین | Mini Chat</title>
+  <meta name="description" content="پنل مدیریت چت‌ها برای ادمین">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    body { overflow: hidden; direction: rtl; }
+    .bubble-text { white-space: pre-wrap; }
+    /* Admin: their own messages on right, guest on left */
+    .admin-panel { direction: rtl; }
+
+    /* Login overlay */
+    #admin-login-overlay {
+      position: fixed; inset: 0; z-index: 200;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--bg-primary);
+    }
+    #admin-login-overlay .login-card { direction: rtl; }
+
+    /* Sidebar header */
+    .admin-top-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 16px;
+      height: var(--header-h);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .admin-top-header .title { font-size: 16px; font-weight: 700; }
+    .admin-top-header .subtitle { font-size: 11px; color: var(--text-muted); }
+
+    /* Notification dot */
+    .notif-dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      background: var(--accent);
+      border-radius: 50%;
+      animation: pulse 1.5s infinite;
+    }
+
+    /* Room code in sidebar item */
+    .room-code-small {
+      font-size: 10px; color: var(--text-muted);
+      font-family: monospace;
+      background: var(--bg-tertiary);
+      padding: 1px 5px;
+      border-radius: 4px;
+      margin-right: 4px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Loading Screen -->
+<div id="loading-screen">
+  <div class="logo-icon">🔧</div>
+  <div class="spinner"></div>
+</div>
+
+<!-- Toast Container -->
+<div id="toast-container"></div>
+
+<!-- Image Lightbox -->
+<div id="lightbox" class="lightbox hidden">
+  <img id="lightbox-img" src="" alt="تصویر">
+</div>
+
+<!-- Admin Login Overlay -->
+<div id="admin-login-overlay">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="logo-circle">🔧</div>
+      <h1>پنل ادمین</h1>
+      <p>رمز مدیریتی خود را وارد کنید</p>
+    </div>
+    <div id="admin-login-error" class="login-error hidden"></div>
+    <form id="admin-login-form">
+      <div class="form-group">
+        <label for="admin-password">رمز ادمین</label>
+        <input type="password" id="admin-password" class="form-control" placeholder="رمز عبور" required autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn btn-primary btn-lg btn-block" id="admin-login-btn">
+        <span id="admin-login-btn-text">ورود</span>
+        <span id="admin-login-spinner" class="hidden" style="width:18px;height:18px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.7s linear infinite;display:inline-block;"></span>
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- Admin Panel (hidden until logged in) -->
+<div class="admin-panel chat-app" id="admin-panel" style="display:none;">
+
+  <!-- Sidebar -->
+  <div class="sidebar" id="admin-sidebar">
+    <!-- Top Header -->
+    <div class="admin-top-header">
+      <div>
+        <div class="title">💬 Mini Chat</div>
+        <div class="subtitle" id="rooms-count">۰ گفتگو فعال</div>
+      </div>
+      <button class="btn-icon" id="logout-btn" title="خروج">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" /></svg>
+      </button>
+    </div>
+
+    <!-- New Room Button -->
+    <div class="sidebar-new-room">
+      <button class="btn btn-primary btn-block" id="new-room-btn" style="font-size:13px;">
+        ➕ ایجاد گفتگوی جدید
+      </button>
+    </div>
+
+    <!-- Search -->
+    <div class="sidebar-search">
+      <div class="sidebar-search-wrap">
+        <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 15.803a7.5 7.5 0 0010.607 10.607z" /></svg>
+        <input type="text" id="search-input" placeholder="جستجو در گفتگوها...">
+      </div>
+    </div>
+
+    <!-- Rooms List -->
+    <div class="rooms-list" id="rooms-list">
+      <div class="rooms-empty">
+        <div class="icon">💬</div>
+        <p>هنوز گفتگویی وجود ندارد</p>
+        <small>با کلیک روی «ایجاد گفتگو» شروع کنید</small>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chat Area -->
+  <div class="chat-area" id="main-chat-area">
+    <!-- No chat selected placeholder -->
+    <div class="no-chat-selected" id="no-chat-placeholder">
+      <div class="icon-wrap">💬</div>
+      <p>یک گفتگو را از سمت راست انتخاب کنید</p>
+      <small>یا یک گفتگوی جدید ایجاد کنید</small>
+    </div>
+
+    <!-- Active chat (hidden initially) -->
+    <div id="active-chat" style="display:none; flex-direction:column; height:100%;">
+      <!-- Chat Header -->
+      <div class="chat-header">
+        <div class="chat-header-info">
+          <div class="avatar" id="chat-avatar">?</div>
+          <div>
+            <div class="chat-header-name" id="chat-guest-name">مهمان</div>
+            <div class="chat-header-status" id="chat-guest-status">آفلاین</div>
+          </div>
+          <span class="room-code-small" id="chat-room-code"></span>
+        </div>
+        <div class="chat-header-actions">
+          <button class="btn-icon" id="copy-room-info-btn" title="کپی اطلاعات اتاق">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" /></svg>
+          </button>
+          <button class="btn-icon" id="delete-room-btn" title="بستن و حذف گفتگو" style="color: var(--danger);">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Messages -->
+      <div class="messages-area" id="admin-messages-area"></div>
+
+      <!-- Typing indicator -->
+      <div id="admin-typing-wrap" style="padding: 0 16px 8px; display:none;">
+        <div class="typing-indicator">
+          <span></span><span></span><span></span>
+        </div>
+        <small style="font-size:11px;color:var(--text-muted);margin-right:8px;">در حال تایپ...</small>
+      </div>
+
+      <!-- Upload preview bar -->
+      <div id="admin-upload-preview" class="upload-preview hidden">
+        <span class="preview-icon">📎</span>
+        <span class="preview-name" id="admin-preview-name"></span>
+        <span class="remove-preview" id="admin-remove-preview">✕</span>
+      </div>
+
+      <!-- Input Area -->
+      <div class="chat-input-area">
+        <button class="attach-btn" id="admin-attach-btn" title="پیوست فایل">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" /></svg>
+        </button>
+        <textarea
+          id="admin-message-input"
+          class="input-box"
+          placeholder="پیام به مهمان..."
+          rows="1"
+          maxlength="4000"
+        ></textarea>
+        <button class="send-btn" id="admin-send-btn" title="ارسال">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" /></svg>
+        </button>
+      </div>
+
+      <input type="file" id="admin-file-input" style="display:none" accept="image/*,video/*,audio/*,.pdf,.zip,.rar,.7z,.txt,.csv,.doc,.docx,.xls,.xlsx">
+    </div>
+  </div>
+</div>
+
+<!-- New Room Modal -->
+<div id="new-room-modal" class="modal-overlay hidden">
+  <div class="modal" style="direction:rtl;">
+    <h3>ایجاد گفتگوی جدید</h3>
+    <div class="form-group">
+      <label for="new-guest-name">نام مهمان</label>
+      <input type="text" id="new-guest-name" class="form-control" placeholder="مثال: علی رضایی" maxlength="50">
+    </div>
+    <div class="form-group">
+      <label for="new-room-pass">رمز اتاق (خالی = خودکار)</label>
+      <input type="text" id="new-room-pass" class="form-control" placeholder="اختیاری — اگر خالی باشد خودکار ساخته می‌شود" maxlength="30">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="modal-cancel-btn">انصراف</button>
+      <button class="btn btn-primary" id="modal-create-btn">ایجاد گفتگو</button>
+    </div>
+  </div>
+</div>
+
+<!-- Room Created Modal -->
+<div id="room-info-modal" class="modal-overlay hidden">
+  <div class="modal" style="direction:rtl; text-align:center;">
+    <h3>✅ گفتگو ایجاد شد!</h3>
+    <p style="color:var(--text-secondary);font-size:13px;">اطلاعات زیر را برای مهمان ارسال کنید:</p>
+    <div class="code-display" id="room-info-display"></div>
+    <div class="modal-actions" style="justify-content:center;">
+      <button class="btn btn-primary" id="copy-info-btn">📋 کپی اطلاعات</button>
+      <button class="btn btn-ghost" id="close-info-btn">بستن</button>
+    </div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/app.js"></script>
+<script>
+// ─── Admin Panel Logic ────────────────────────────────────────────────────────
+(function AdminPanel() {
+  let adminAuth = localStorage.getItem('mc_admin_auth');
+  let socket = null;
+  let currentRoomCode = null;
+  let adminPendingFile = null;
+  let adminTypingTimer = null;
+  let adminIsTyping = false;
+  let roomsData = {};
+  let unreadCounts = {};
+  let lastCreatedRoom = null;
+
+  // ── Loading ──
+  window.addEventListener('load', () => {
+    setTimeout(() => {
+      const ls = document.getElementById('loading-screen');
+      ls.style.opacity = '0';
+      setTimeout(() => ls.remove(), 400);
+    }, 500);
+  });
+
+  // ── Check if already logged in ──
+  if (adminAuth) {
+    showPanel();
+  }
+
+  // ── Admin Login Form ──
+  document.getElementById('admin-login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const pw = document.getElementById('admin-password').value;
+    const errBox = document.getElementById('admin-login-error');
+    const btn = document.getElementById('admin-login-btn');
+    const btnText = document.getElementById('admin-login-btn-text');
+    const spinner = document.getElementById('admin-login-spinner');
+
+    errBox.classList.add('hidden');
+    btn.disabled = true;
+    btnText.style.display = 'none';
+    spinner.classList.remove('hidden');
+
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw })
+      });
+      const data = await res.json();
+      if (data.success) {
+        adminAuth = pw;
+        localStorage.setItem('mc_admin_auth', pw);
+        showPanel();
+      } else {
+        errBox.textContent = data.message || 'رمز عبور اشتباه است';
+        errBox.classList.remove('hidden');
+        btn.disabled = false;
+        btnText.style.display = '';
+        spinner.classList.add('hidden');
+      }
+    } catch {
+      errBox.textContent = 'خطا در اتصال به سرور';
+      errBox.classList.remove('hidden');
+      btn.disabled = false;
+      btnText.style.display = '';
+      spinner.classList.add('hidden');
+    }
+  });
+
+  function showPanel() {
+    document.getElementById('admin-login-overlay').style.display = 'none';
+    document.getElementById('admin-panel').style.display = 'flex';
+    initSocket();
+  }
+
+  // ── Logout ──
+  document.getElementById('logout-btn').addEventListener('click', () => {
+    if (confirm('از پنل خارج شوید؟')) {
+      localStorage.removeItem('mc_admin_auth');
+      location.reload();
+    }
+  });
+
+  // ── Socket ──
+  function initSocket() {
+    socket = io();
+    socket.on('connect', () => {
+      socket.emit('admin:join', { auth: adminAuth });
+    });
+    socket.on('admin:rooms', (rooms) => {
+      roomsData = {};
+      rooms.forEach(r => { roomsData[r.code] = r; });
+      renderRoomsList();
+    });
+    socket.on('room:active', ({ code, guestName, active }) => {
+      if (roomsData[code]) {
+        roomsData[code].active = active;
+        renderRoomsList();
+        if (active) toast(`${guestName} آنلاین شد`, 'success');
+        if (currentRoomCode === code) {
+          updateChatStatus(code);
+        }
+      }
+    });
+    socket.on('room:updated', ({ code, lastMessage, messageCount }) => {
+      if (roomsData[code]) {
+        roomsData[code].lastMessage = lastMessage;
+        roomsData[code].messageCount = messageCount;
+        if (currentRoomCode !== code) {
+          unreadCounts[code] = (unreadCounts[code] || 0) + 1;
+        }
+        renderRoomsList();
+      }
+    });
+    socket.on('message:new', ({ code, message }) => {
+      if (currentRoomCode === code) {
+        renderAdminMessage(message, true);
+        scrollAdminToBottom();
+      }
+    });
+    socket.on('admin:room-history', ({ code, guestName, messages }) => {
+      renderAdminChat(code, guestName, messages);
+    });
+    socket.on('typing', ({ code, sender, isTyping }) => {
+      if (sender === 'guest' && code === currentRoomCode) {
+        document.getElementById('admin-typing-wrap').style.display = isTyping ? 'flex' : 'none';
+        if (isTyping) scrollAdminToBottom();
+      }
+    });
+    socket.on('error:auth', () => {
+      localStorage.removeItem('mc_admin_auth');
+      toast('نشست منقضی شد. لطفاً مجدداً وارد شوید.', 'error');
+      setTimeout(() => location.reload(), 1500);
+    });
+    socket.on('disconnect', () => {
+      toast('اتصال قطع شد...', 'error');
+    });
+  }
+
+  // ── Render rooms list ──
+  function renderRoomsList(filter = '') {
+    const list = document.getElementById('rooms-list');
+    const entries = Object.values(roomsData)
+      .filter(r => !filter || r.guestName.includes(filter) || r.code.includes(filter.toUpperCase()))
+      .sort((a, b) => {
+        if (a.active !== b.active) return a.active ? -1 : 1;
+        const aT = a.lastMessage ? new Date(a.lastMessage.timestamp) : new Date(a.createdAt);
+        const bT = b.lastMessage ? new Date(b.lastMessage.timestamp) : new Date(b.createdAt);
+        return bT - aT;
+      });
+
+    const activeCount = Object.values(roomsData).filter(r => r.active).length;
+    document.getElementById('rooms-count').textContent = `${activeCount} گفتگو آنلاین`;
+
+    if (entries.length === 0) {
+      list.innerHTML = `<div class="rooms-empty"><div class="icon">💬</div><p>هنوز گفتگویی وجود ندارد</p><small>با کلیک روی «ایجاد گفتگو» شروع کنید</small></div>`;
+      return;
+    }
+
+    list.innerHTML = entries.map(r => {
+      const lastMsg = r.lastMessage;
+      const lastText = lastMsg ? (lastMsg.file ? `📎 ${lastMsg.file.name}` : lastMsg.text || '') : 'گفتگو شروع نشده';
+      const unread = unreadCounts[r.code] || 0;
+      const initials = r.guestName.slice(0, 2);
+      const timeStr = lastMsg ? formatTime(lastMsg.timestamp) : '';
+      return `
+        <div class="room-item ${currentRoomCode === r.code ? 'active' : ''}" data-code="${r.code}" onclick="window.__openRoom('${r.code}')">
+          <div class="avatar sm" style="background: ${strToColor(r.code)};">
+            ${initials}
+            ${r.active ? '<div class="status-dot online" style="position:absolute;bottom:1px;right:1px;border:2px solid var(--bg-secondary);"></div>' : ''}
+          </div>
+          <div class="room-info">
+            <div class="room-name">
+              ${escHtml(r.guestName)}
+              ${r.active ? '<span class="notif-dot"></span>' : ''}
+            </div>
+            <div class="room-last-msg truncate">${escHtml(lastText.slice(0, 50))}</div>
+          </div>
+          <div class="room-meta">
+            <div class="room-time">${timeStr}</div>
+            ${unread > 0 ? `<div class="room-badge">${unread}</div>` : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  window.__openRoom = function(code) {
+    currentRoomCode = code;
+    unreadCounts[code] = 0;
+    renderRoomsList();
+    document.getElementById('no-chat-placeholder').style.display = 'none';
+    const activeChat = document.getElementById('active-chat');
+    activeChat.style.display = 'flex';
+    socket.emit('admin:open-room', { auth: adminAuth, code });
+    updateChatStatus(code);
+  };
+
+  function renderAdminChat(code, guestName, messages) {
+    const area = document.getElementById('admin-messages-area');
+    area.innerHTML = '';
+    document.getElementById('chat-guest-name').textContent = guestName;
+    document.getElementById('chat-avatar').textContent = guestName.slice(0, 2);
+    document.getElementById('chat-avatar').style.background = strToColor(code);
+    document.getElementById('chat-room-code').textContent = code;
+    if (messages.length === 0) addAdminSystemMessage('گفتگو آغاز شد. پیام خود را ارسال کنید.');
+    messages.forEach(m => renderAdminMessage(m, false));
+    scrollAdminToBottom();
+  }
+
+  function renderAdminMessage(msg, animate) {
+    const area = document.getElementById('admin-messages-area');
+    if (area.querySelector(`[data-id="${msg.id}"]`)) return;
+    const isAdmin = msg.sender === 'admin';
+    const wrap = document.createElement('div');
+    wrap.className = `message-wrap ${isAdmin ? 'out' : 'in'}`;
+    wrap.dataset.id = msg.id;
+    if (animate) wrap.classList.add(isAdmin ? 'out' : 'in');
+
+    let content = '';
+    if (msg.file) {
+      content = buildFileHtml(msg.file);
+    }
+    if (msg.text) {
+      content += `<div class="bubble-text">${escHtml(msg.text)}</div>`;
+    }
+    content += `<div class="bubble-time ${isAdmin ? '' : 'in-time'}">${formatTime(msg.timestamp)}</div>`;
+
+    wrap.innerHTML = `<div class="bubble">${content}</div>`;
+    area.appendChild(wrap);
+    bindImageClicks(wrap);
+  }
+
+  function addAdminSystemMessage(text) {
+    const area = document.getElementById('admin-messages-area');
+    const div = document.createElement('div');
+    div.className = 'date-divider';
+    div.innerHTML = `<span>${text}</span>`;
+    area.appendChild(div);
+  }
+
+  function updateChatStatus(code) {
+    const r = roomsData[code];
+    if (!r) return;
+    const statusEl = document.getElementById('chat-guest-status');
+    statusEl.textContent = r.active ? 'آنلاین' : 'آفلاین';
+    statusEl.className = 'chat-header-status ' + (r.active ? 'online' : 'offline');
+  }
+
+  function scrollAdminToBottom() {
+    const area = document.getElementById('admin-messages-area');
+    requestAnimationFrame(() => { area.scrollTop = area.scrollHeight; });
+  }
+
+  // ── Admin send message ──
+  function adminSend() {
+    if (!currentRoomCode) return;
+    const input = document.getElementById('admin-message-input');
+    const text = input.value.trim();
+    if (!text && !adminPendingFile) return;
+
+    socket.emit('message:send', {
+      code: currentRoomCode,
+      sender: 'admin',
+      text: text || null,
+      file: adminPendingFile || null
+    });
+    input.value = '';
+    input.style.height = 'auto';
+    adminPendingFile = null;
+    clearAdminUploadPreview();
+    adminStopTyping();
+  }
+
+  document.getElementById('admin-send-btn').addEventListener('click', adminSend);
+  document.getElementById('admin-message-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); adminSend(); }
+  });
+  document.getElementById('admin-message-input').addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 160) + 'px';
+    adminHandleTyping();
+  });
+
+  function adminHandleTyping() {
+    if (!adminIsTyping && currentRoomCode) {
+      adminIsTyping = true;
+      socket.emit('typing', { code: currentRoomCode, sender: 'admin', isTyping: true });
+    }
+    clearTimeout(adminTypingTimer);
+    adminTypingTimer = setTimeout(adminStopTyping, 2000);
+  }
+  function adminStopTyping() {
+    if (adminIsTyping && currentRoomCode) {
+      adminIsTyping = false;
+      socket.emit('typing', { code: currentRoomCode, sender: 'admin', isTyping: false });
+    }
+  }
+
+  // ── Admin file upload ──
+  document.getElementById('admin-attach-btn').addEventListener('click', () => {
+    document.getElementById('admin-file-input').click();
+  });
+  document.getElementById('admin-file-input').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) adminUploadFile(file);
+    e.target.value = '';
+  });
+  document.getElementById('admin-remove-preview').addEventListener('click', () => {
+    adminPendingFile = null;
+    clearAdminUploadPreview();
+  });
+
+  async function adminUploadFile(file) {
+    if (file.size > 10 * 1024 * 1024) { toast('حداکثر سایز فایل ۱۰ مگابایت است', 'error'); return; }
+    toast('در حال آپلود...', 'info');
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const res = await fetch('/upload', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (data.success) {
+        adminPendingFile = { url: data.url, name: data.name, size: data.size, type: data.type };
+        document.getElementById('admin-preview-name').textContent = data.name;
+        document.getElementById('admin-upload-preview').classList.remove('hidden');
+        toast('فایل آماده ارسال', 'success');
+      } else {
+        toast(data.message || 'خطا در آپلود', 'error');
+      }
+    } catch { toast('خطا در آپلود فایل', 'error'); }
+  }
+  function clearAdminUploadPreview() {
+    document.getElementById('admin-upload-preview').classList.add('hidden');
+    document.getElementById('admin-preview-name').textContent = '';
+  }
+
+  // ── New Room Modal ──
+  document.getElementById('new-room-btn').addEventListener('click', () => {
+    document.getElementById('new-guest-name').value = '';
+    document.getElementById('new-room-pass').value = '';
+    document.getElementById('new-room-modal').classList.remove('hidden');
+  });
+  document.getElementById('modal-cancel-btn').addEventListener('click', () => {
+    document.getElementById('new-room-modal').classList.add('hidden');
+  });
+  document.getElementById('modal-create-btn').addEventListener('click', async () => {
+    const guestName = document.getElementById('new-guest-name').value.trim() || 'مهمان';
+    const password = document.getElementById('new-room-pass').value.trim();
+    try {
+      const res = await fetch('/api/admin/create-room', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auth: adminAuth, guestName, password: password || undefined })
+      });
+      const data = await res.json();
+      if (data.success) {
+        document.getElementById('new-room-modal').classList.add('hidden');
+        lastCreatedRoom = data;
+        roomsData[data.code] = {
+          code: data.code, guestName, active: false,
+          messageCount: 0, lastMessage: null, createdAt: new Date()
+        };
+        renderRoomsList();
+        showRoomInfoModal(data.code, data.password, guestName);
+        toast('گفتگو ایجاد شد!', 'success');
+      } else {
+        toast(data.message || 'خطا', 'error');
+      }
+    } catch { toast('خطا در ارتباط با سرور', 'error'); }
+  });
+
+  function showRoomInfoModal(code, pass, guestName) {
+    document.getElementById('room-info-display').innerHTML = `
+      <div class="invite-code">${code}</div>
+      <div class="invite-pass">🔑 رمز: <strong>${pass}</strong></div>
+      <div class="code-hint">برای: ${escHtml(guestName)}</div>
+      <div class="code-hint" style="margin-top:4px;">آدرس ورود: <span style="color:var(--accent);">${location.origin}/</span></div>
+    `;
+    document.getElementById('room-info-modal').classList.remove('hidden');
+  }
+
+  document.getElementById('copy-info-btn').addEventListener('click', () => {
+    if (!lastCreatedRoom) return;
+    const text = `🔗 لینک ورود: ${location.origin}/\n📌 کد دعوت: ${lastCreatedRoom.code}\n🔑 رمز: ${lastCreatedRoom.password}`;
+    navigator.clipboard.writeText(text).then(() => toast('اطلاعات کپی شد!', 'success'));
+  });
+  document.getElementById('close-info-btn').addEventListener('click', () => {
+    document.getElementById('room-info-modal').classList.add('hidden');
+  });
+
+  // ── Copy room info from header button ──
+  document.getElementById('copy-room-info-btn').addEventListener('click', () => {
+    if (!currentRoomCode) return;
+    const r = roomsData[currentRoomCode];
+    if (!r) return;
+    // We don't store password in frontend after creation; show code
+    toast('کد اتاق: ' + currentRoomCode + ' (رمز در هنگام ایجاد نمایش داده شد)', 'info');
+    navigator.clipboard.writeText(currentRoomCode);
+  });
+
+  // ── Delete room ──
+  document.getElementById('delete-room-btn').addEventListener('click', async () => {
+    if (!currentRoomCode) return;
+    const r = roomsData[currentRoomCode];
+    if (!confirm(`آیا می‌خواهید گفتگوی "${r?.guestName || currentRoomCode}" را ببندید و حذف کنید؟`)) return;
+    try {
+      const res = await fetch(`/api/admin/room/${currentRoomCode}`, {
+        method: 'DELETE',
+        headers: { 'x-admin-auth': adminAuth }
+      });
+      const data = await res.json();
+      if (data.success) {
+        delete roomsData[currentRoomCode];
+        delete unreadCounts[currentRoomCode];
+        currentRoomCode = null;
+        document.getElementById('active-chat').style.display = 'none';
+        document.getElementById('no-chat-placeholder').style.display = 'flex';
+        renderRoomsList();
+        toast('گفتگو حذف شد', 'success');
+      }
+    } catch { toast('خطا', 'error'); }
+  });
+
+  // ── Search ──
+  document.getElementById('search-input').addEventListener('input', (e) => {
+    renderRoomsList(e.target.value.trim());
+  });
+
+  // ── Lightbox ──
+  document.getElementById('lightbox').addEventListener('click', () => {
+    document.getElementById('lightbox').classList.add('hidden');
+  });
+
+  // ── Image click binding (called from renderAdminMessage) ──
+  function bindImageClicks(container) {
+    container.querySelectorAll('.img-bubble img').forEach(img => {
+      img.style.cursor = 'zoom-in';
+      img.addEventListener('click', () => {
+        document.getElementById('lightbox-img').src = img.src;
+        document.getElementById('lightbox').classList.remove('hidden');
+      });
+    });
+  }
+})();
+</script>
+</body>
+</html>

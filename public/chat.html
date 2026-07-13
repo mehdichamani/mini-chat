@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>گفتگو | Mini Chat</title>
+  <meta name="description" content="صفحه چت مهمان">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    body { overflow: hidden; }
+    .guest-chat-page { direction: rtl; }
+    .bubble-text { white-space: pre-wrap; }
+    /* Out bubbles are admin messages (from our perspective as guest, admin sends "out" visually? No:
+       Guest sees their own messages as .out (right side) and admin as .in (left side) */
+  </style>
+</head>
+<body>
+  <!-- Loading Screen -->
+  <div id="loading-screen">
+    <div class="logo-icon">💬</div>
+    <div class="spinner"></div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container"></div>
+
+  <!-- Image Lightbox -->
+  <div id="lightbox" class="lightbox hidden">
+    <img id="lightbox-img" src="" alt="تصویر">
+  </div>
+
+  <!-- Drag Overlay -->
+  <div id="drag-overlay" class="drag-overlay hidden">
+    <div class="drag-icon">📎</div>
+    <div>فایل را اینجا رها کنید</div>
+  </div>
+
+  <!-- Guest Chat Page -->
+  <div class="guest-chat-page" id="chat-page" style="display:none;">
+    <!-- Header -->
+    <div class="chat-header">
+      <div class="chat-header-info">
+        <div class="avatar" id="admin-avatar">A</div>
+        <div>
+          <div class="chat-header-name">پشتیبانی</div>
+          <div class="chat-header-status" id="admin-status">در حال بارگذاری...</div>
+        </div>
+      </div>
+      <div class="chat-header-actions">
+        <button class="btn-icon" id="close-chat-btn" title="بستن گفتگو">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Messages -->
+    <div class="messages-area" id="messages-area">
+      <!-- Populated by JS -->
+    </div>
+
+    <!-- Typing indicator -->
+    <div id="typing-wrap" style="padding: 0 16px 8px; display:none;">
+      <div class="typing-indicator">
+        <span></span><span></span><span></span>
+      </div>
+    </div>
+
+    <!-- Upload preview bar -->
+    <div id="upload-preview" class="upload-preview hidden">
+      <span class="preview-icon">📎</span>
+      <span class="preview-name" id="preview-name"></span>
+      <span class="remove-preview" id="remove-preview">✕</span>
+    </div>
+
+    <!-- Input Area -->
+    <div class="chat-input-area">
+      <button class="attach-btn" id="attach-btn" title="پیوست فایل">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" /></svg>
+      </button>
+      <textarea
+        id="message-input"
+        class="input-box"
+        placeholder="پیام بنویسید..."
+        rows="1"
+        maxlength="4000"
+      ></textarea>
+      <button class="send-btn" id="send-btn" title="ارسال">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" /></svg>
+      </button>
+    </div>
+
+    <!-- Hidden file input -->
+    <input type="file" id="file-input" style="display:none" accept="image/*,video/*,audio/*,.pdf,.zip,.rar,.7z,.txt,.csv,.doc,.docx,.xls,.xlsx">
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/app.js"></script>
+  <script>
+    // ─── Guest Chat Page Logic ──────────────────────────────────────────────
+    (function GuestChat() {
+      const code = sessionStorage.getItem('mc_code');
+      const password = sessionStorage.getItem('mc_password');
+      const displayName = sessionStorage.getItem('mc_display_name') || 'مهمان';
+
+      // Redirect if no session
+      if (!code || !password) {
+        window.location.href = '/';
+        return;
+      }
+
+      const socket = io();
+      let pendingFile = null;
+      let typingTimer = null;
+      let isTyping = false;
+
+      // ── Hide loading ──
+      window.addEventListener('load', () => {
+        setTimeout(() => {
+          const ls = document.getElementById('loading-screen');
+          ls.style.opacity = '0';
+          setTimeout(() => { ls.remove(); document.getElementById('chat-page').style.display = 'flex'; }, 400);
+        }, 500);
+      });
+
+      // ── Socket events ──
+      socket.on('connect', () => {
+        socket.emit('guest:join', { code, password });
+      });
+
+      socket.on('guest:joined', ({ guestName, messages }) => {
+        document.getElementById('admin-status').textContent = 'آنلاین';
+        document.getElementById('admin-status').className = 'chat-header-status online';
+        // Render history
+        const area = document.getElementById('messages-area');
+        area.innerHTML = '';
+        if (messages.length === 0) {
+          addSystemMessage('گفتگو شروع شد. پیام خود را ارسال کنید.');
+        }
+        messages.forEach(m => renderMessage(m, false));
+        scrollToBottom();
+      });
+
+      socket.on('message:new', ({ message }) => {
+        renderMessage(message, true);
+        scrollToBottom();
+      });
+
+      socket.on('typing', ({ sender, isTyping }) => {
+        if (sender === 'admin') {
+          document.getElementById('typing-wrap').style.display = isTyping ? 'block' : 'none';
+          if (isTyping) scrollToBottom();
+        }
+      });
+
+      socket.on('room:closed', ({ message }) => {
+        toast(message, 'info');
+        addSystemMessage('🔒 ' + message);
+        disableInput();
+      });
+
+      socket.on('error:auth', ({ message }) => {
+        toast(message, 'error');
+        setTimeout(() => { window.location.href = '/'; }, 1500);
+      });
+
+      socket.on('disconnect', () => {
+        document.getElementById('admin-status').textContent = 'اتصال قطع شد...';
+        document.getElementById('admin-status').className = 'chat-header-status offline';
+      });
+
+      // ── Send message ──
+      function sendMessage() {
+        const input = document.getElementById('message-input');
+        const text = input.value.trim();
+        if (!text && !pendingFile) return;
+
+        if (pendingFile) {
+          socket.emit('message:send', {
+            code, sender: 'guest',
+            text: text || null,
+            file: pendingFile
+          });
+          pendingFile = null;
+          clearUploadPreview();
+        } else {
+          socket.emit('message:send', { code, sender: 'guest', text });
+        }
+        input.value = '';
+        input.style.height = 'auto';
+        stopTyping();
+      }
+
+      document.getElementById('send-btn').addEventListener('click', sendMessage);
+
+      document.getElementById('message-input').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          sendMessage();
+        }
+      });
+
+      // Auto-resize textarea
+      document.getElementById('message-input').addEventListener('input', function() {
+        this.style.height = 'auto';
+        this.style.height = Math.min(this.scrollHeight, 160) + 'px';
+        handleTyping();
+      });
+
+      // ── Typing detection ──
+      function handleTyping() {
+        if (!isTyping) {
+          isTyping = true;
+          socket.emit('typing', { code, sender: 'guest', isTyping: true });
+        }
+        clearTimeout(typingTimer);
+        typingTimer = setTimeout(stopTyping, 2000);
+      }
+      function stopTyping() {
+        if (isTyping) {
+          isTyping = false;
+          socket.emit('typing', { code, sender: 'guest', isTyping: false });
+        }
+      }
+
+      // ── File attachment ──
+      document.getElementById('attach-btn').addEventListener('click', () => {
+        document.getElementById('file-input').click();
+      });
+
+      document.getElementById('file-input').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) handleFileUpload(file);
+        e.target.value = '';
+      });
+
+      document.getElementById('remove-preview').addEventListener('click', () => {
+        pendingFile = null;
+        clearUploadPreview();
+      });
+
+      // Drag & drop
+      const chatArea = document.querySelector('.guest-chat-page');
+      chatArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        document.getElementById('drag-overlay').classList.remove('hidden');
+      });
+      chatArea.addEventListener('dragleave', (e) => {
+        if (!chatArea.contains(e.relatedTarget)) {
+          document.getElementById('drag-overlay').classList.add('hidden');
+        }
+      });
+      chatArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        document.getElementById('drag-overlay').classList.add('hidden');
+        const file = e.dataTransfer.files[0];
+        if (file) handleFileUpload(file);
+      });
+
+      async function handleFileUpload(file) {
+        if (file.size > 10 * 1024 * 1024) {
+          toast('حداکثر سایز فایل ۱۰ مگابایت است', 'error');
+          return;
+        }
+        toast('در حال آپلود فایل...', 'info');
+        const formData = new FormData();
+        formData.append('file', file);
+        try {
+          const res = await fetch('/upload', { method: 'POST', body: formData });
+          const data = await res.json();
+          if (data.success) {
+            pendingFile = { url: data.url, name: data.name, size: data.size, type: data.type };
+            document.getElementById('preview-name').textContent = data.name;
+            document.getElementById('upload-preview').classList.remove('hidden');
+            toast('فایل آماده ارسال است', 'success');
+          } else {
+            toast(data.message || 'خطا در آپلود', 'error');
+          }
+        } catch {
+          toast('خطا در آپلود فایل', 'error');
+        }
+      }
+
+      function clearUploadPreview() {
+        document.getElementById('upload-preview').classList.add('hidden');
+        document.getElementById('preview-name').textContent = '';
+      }
+
+      // ── Close button ──
+      document.getElementById('close-chat-btn').addEventListener('click', () => {
+        if (confirm('آیا می‌خواهید گفتگو را ببندید؟')) {
+          sessionStorage.clear();
+          window.location.href = '/';
+        }
+      });
+
+      // ── Lightbox ──
+      document.getElementById('lightbox').addEventListener('click', () => {
+        document.getElementById('lightbox').classList.add('hidden');
+      });
+
+      function disableInput() {
+        document.getElementById('message-input').disabled = true;
+        document.getElementById('send-btn').disabled = true;
+        document.getElementById('attach-btn').disabled = true;
+      }
+    })();
+  </script>
+</body>
+</html>

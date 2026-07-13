@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ورود به چت | Mini Chat</title>
+  <meta name="description" content="برای ورود به گفتگو، کد دعوت و رمز عبور خود را وارد کنید.">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    /* RTL overrides for login page */
+    .login-card { direction: rtl; }
+    .form-group label { text-align: right; text-transform: none; letter-spacing: 0; }
+    .login-logo h1 { font-size: 20px; }
+  </style>
+</head>
+<body>
+  <!-- Loading Screen -->
+  <div id="loading-screen">
+    <div class="logo-icon">💬</div>
+    <div class="spinner"></div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container"></div>
+
+  <!-- Login Page -->
+  <div class="login-page" id="login-page">
+    <div class="login-card">
+      <div class="login-logo">
+        <div class="logo-circle">💬</div>
+        <h1>Mini Chat</h1>
+        <p>برای ورود، اطلاعات دریافتی از ادمین را وارد کنید</p>
+      </div>
+
+      <div id="login-error" class="login-error hidden"></div>
+
+      <form id="login-form" autocomplete="off">
+        <div class="form-group">
+          <label for="invite-code">کد دعوت</label>
+          <input
+            type="text"
+            id="invite-code"
+            class="form-control"
+            placeholder="مثال: AB3X7YZ2"
+            autocomplete="off"
+            spellcheck="false"
+            maxlength="20"
+            required
+          >
+        </div>
+        <div class="form-group">
+          <label for="room-password">رمز عبور</label>
+          <input
+            type="password"
+            id="room-password"
+            class="form-control"
+            placeholder="رمز عبور اتاق"
+            autocomplete="new-password"
+            required
+          >
+        </div>
+        <div class="form-group">
+          <label for="guest-display-name">نام نمایشی شما (اختیاری)</label>
+          <input
+            type="text"
+            id="guest-display-name"
+            class="form-control"
+            placeholder="برای نمایش در چت (اختیاری)"
+            maxlength="40"
+          >
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg btn-block" id="login-btn">
+          <span id="login-btn-text">ورود به گفتگو</span>
+          <span id="login-btn-spinner" class="hidden" style="width:18px;height:18px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.7s linear infinite;display:inline-block;"></span>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // ── Hide loading screen ──
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        const ls = document.getElementById('loading-screen');
+        ls.style.opacity = '0';
+        setTimeout(() => ls.remove(), 400);
+      }, 600);
+    });
+
+    // ── Toast helper ──
+    function toast(msg, type = 'info') {
+      const icons = { success: '✅', error: '❌', info: 'ℹ️' };
+      const el = document.createElement('div');
+      el.className = `toast ${type}`;
+      el.innerHTML = `<span class="toast-icon">${icons[type]}</span><span>${msg}</span>`;
+      document.getElementById('toast-container').appendChild(el);
+      setTimeout(() => el.remove(), 3500);
+    }
+
+    // ── Form submit ──
+    const form = document.getElementById('login-form');
+    const errorBox = document.getElementById('login-error');
+    const loginBtn = document.getElementById('login-btn');
+    const btnText = document.getElementById('login-btn-text');
+    const btnSpinner = document.getElementById('login-btn-spinner');
+
+    function setLoading(v) {
+      loginBtn.disabled = v;
+      btnText.style.display = v ? 'none' : '';
+      btnSpinner.classList.toggle('hidden', !v);
+    }
+
+    function showError(msg) {
+      errorBox.textContent = msg;
+      errorBox.classList.remove('hidden');
+      errorBox.style.animation = 'none';
+      requestAnimationFrame(() => errorBox.style.animation = '');
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorBox.classList.add('hidden');
+      const code = document.getElementById('invite-code').value.trim().toUpperCase();
+      const password = document.getElementById('room-password').value;
+      const displayName = document.getElementById('guest-display-name').value.trim();
+
+      if (!code || !password) {
+        showError('لطفاً کد دعوت و رمز عبور را وارد کنید.');
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const res = await fetch('/api/guest/join', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code, password })
+        });
+        const data = await res.json();
+        if (data.success) {
+          // Store session
+          sessionStorage.setItem('mc_code', code);
+          sessionStorage.setItem('mc_password', password);
+          sessionStorage.setItem('mc_guest_name', data.guestName);
+          sessionStorage.setItem('mc_display_name', displayName || data.guestName);
+          toast('در حال ورود به گفتگو...', 'success');
+          setTimeout(() => { window.location.href = '/chat'; }, 700);
+        } else {
+          showError(data.message || 'خطا در ورود. لطفاً مجدداً تلاش کنید.');
+          setLoading(false);
+        }
+      } catch (err) {
+        showError('خطا در اتصال به سرور. لطفاً صفحه را رفرش کنید.');
+        setLoading(false);
+      }
+    });
+  </script>
+</body>
+</html>
