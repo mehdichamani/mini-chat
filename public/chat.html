@@ -36,6 +36,7 @@
   </div>
 
   <!-- Guest Chat Page -->
+  <div class="app-wrapper">
   <div class="guest-chat-page" id="chat-page" style="display:none;">
     <!-- Header -->
     <div class="chat-header">
@@ -90,8 +91,9 @@
     </div>
 
     <!-- Hidden file input -->
-    <input type="file" id="file-input" style="display:none" accept="image/*,video/*,audio/*,.pdf,.zip,.rar,.7z,.txt,.csv,.doc,.docx,.xls,.xlsx">
-  </div>
+      <input type="file" id="file-input" style="display:none">
+  </div><!-- /.guest-chat-page -->
+  </div><!-- /.app-wrapper -->
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="/app.js"></script>
@@ -125,6 +127,7 @@
       // ── Socket events ──
       socket.on('connect', () => {
         socket.emit('guest:join', { code, password });
+        requestNotifPermission();
       });
 
       socket.on('guest:joined', ({ guestName, messages }) => {
@@ -143,6 +146,11 @@
       socket.on('message:new', ({ message }) => {
         renderMessage(message, true);
         scrollToBottom();
+        // Notify guest if admin sent a message and window is not focused
+        if (message.sender === 'admin') {
+          sendNotif('پیام جدید از پشتیبانی',
+            message.text || (message.file ? '📎 فایل دریافت شد' : ''));
+        }
       });
 
       socket.on('typing', ({ sender, isTyping }) => {

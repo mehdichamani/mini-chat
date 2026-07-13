@@ -11,6 +11,10 @@
     .login-card { direction: rtl; }
     .form-group label { text-align: right; text-transform: none; letter-spacing: 0; }
     .login-logo h1 { font-size: 20px; }
+    /* Remove spinner from number input */
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type=number] { -moz-appearance: textfield; }
   </style>
 </head>
 <body>
@@ -36,15 +40,18 @@
 
       <form id="login-form" autocomplete="off">
         <div class="form-group">
-          <label for="invite-code">کد دعوت</label>
+          <label for="invite-code">کد دعوت (۶ رقم)</label>
           <input
-            type="text"
+            type="number"
             id="invite-code"
             class="form-control"
-            placeholder="مثال: AB3X7YZ2"
+            placeholder="مثال: 482913"
             autocomplete="off"
-            spellcheck="false"
-            maxlength="20"
+            inputmode="numeric"
+            pattern="[0-9]{6}"
+            maxlength="6"
+            min="100000"
+            max="999999"
             required
           >
         </div>
@@ -120,12 +127,16 @@
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       errorBox.classList.add('hidden');
-      const code = document.getElementById('invite-code').value.trim().toUpperCase();
+      const code = document.getElementById('invite-code').value.trim();
       const password = document.getElementById('room-password').value;
       const displayName = document.getElementById('guest-display-name').value.trim();
 
-      if (!code || !password) {
-        showError('لطفاً کد دعوت و رمز عبور را وارد کنید.');
+      if (!code || code.length !== 6 || !/^\d{6}$/.test(code)) {
+        showError('کد دعوت باید برابر ۶ رقم باشد.');
+        return;
+      }
+      if (!password) {
+        showError('لطفاً رمز عبور را وارد کنید.');
         return;
       }
 

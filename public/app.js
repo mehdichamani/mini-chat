@@ -5,6 +5,34 @@
 
 'use strict';
 
+// ─── Browser Notifications ────────────────────────────────────────────────────
+window.requestNotifPermission = async function() {
+  if (!('Notification' in window)) return false;
+  if (Notification.permission === 'granted') return true;
+  if (Notification.permission === 'denied') return false;
+  try {
+    const perm = await Notification.requestPermission();
+    return perm === 'granted';
+  } catch { return false; }
+};
+
+window.sendNotif = function(title, body) {
+  if (!('Notification' in window)) return;
+  if (Notification.permission !== 'granted') return;
+  if (document.hasFocus() && document.visibilityState === 'visible') return;
+  try {
+    const n = new Notification(title, {
+      body: body || '',
+      icon: '/favicon.ico',
+      badge: '/favicon.ico',
+      tag: 'mini-chat',
+      renotify: true
+    });
+    n.onclick = () => { window.focus(); n.close(); };
+    setTimeout(() => n.close(), 6000);
+  } catch {}
+};
+
 // ─── Toast Notification ───────────────────────────────────────────────────────
 window.toast = function(message, type = 'info') {
   const icons = { success: '✅', error: '❌', info: 'ℹ️', warning: '⚠️' };

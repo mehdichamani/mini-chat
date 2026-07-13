@@ -90,7 +90,8 @@
 </div>
 
 <!-- Admin Panel (hidden until logged in) -->
-<div class="admin-panel chat-app" id="admin-panel" style="display:none;">
+<div class="app-wrapper" id="app-wrapper" style="display:none;">
+<div class="admin-panel chat-app" id="admin-panel">
 
   <!-- Sidebar -->
   <div class="sidebar" id="admin-sidebar">
@@ -144,6 +145,8 @@
       <!-- Chat Header -->
       <div class="chat-header">
         <div class="chat-header-info">
+          <!-- Mobile back button -->
+          <button class="mobile-back-btn" id="mobile-back-btn" title="بازگشت به لیست">‹</button>
           <div class="avatar" id="chat-avatar">?</div>
           <div>
             <div class="chat-header-name" id="chat-guest-name">مهمان</div>
@@ -196,10 +199,11 @@
         </button>
       </div>
 
-      <input type="file" id="admin-file-input" style="display:none" accept="image/*,video/*,audio/*,.pdf,.zip,.rar,.7z,.txt,.csv,.doc,.docx,.xls,.xlsx">
+      <input type="file" id="admin-file-input" style="display:none">
     </div>
   </div>
 </div>
+</div><!-- /.app-wrapper -->
 
 <!-- New Room Modal -->
 <div id="new-room-modal" class="modal-overlay hidden">
@@ -305,8 +309,11 @@
 
   function showPanel() {
     document.getElementById('admin-login-overlay').style.display = 'none';
+    const wrapper = document.getElementById('app-wrapper');
+    wrapper.style.display = 'flex';
     document.getElementById('admin-panel').style.display = 'flex';
     initSocket();
+    requestNotifPermission();
   }
 
   // ── Logout ──
@@ -332,7 +339,10 @@
       if (roomsData[code]) {
         roomsData[code].active = active;
         renderRoomsList();
-        if (active) toast(`${guestName} آنلاین شد`, 'success');
+        if (active) {
+          toast(`${guestName} آنلاین شد`, 'success');
+          sendNotif('مهمان آنلاین شد', `${guestName} وارد گفتگو شد`);
+        }
         if (currentRoomCode === code) {
           updateChatStatus(code);
         }
@@ -344,6 +354,12 @@
         roomsData[code].messageCount = messageCount;
         if (currentRoomCode !== code) {
           unreadCounts[code] = (unreadCounts[code] || 0) + 1;
+          // Notify admin of new message from guest in background room
+          const r = roomsData[code];
+          if (lastMessage && lastMessage.sender === 'guest') {
+            sendNotif(`پیام از ${r ? r.guestName : 'مهمان'}`,
+              lastMessage.text || (lastMessage.file ? '📎 فایل' : ''));
+          }
         }
         renderRoomsList();
       }
@@ -352,6 +368,12 @@
       if (currentRoomCode === code) {
         renderAdminMessage(message, true);
         scrollAdminToBottom();
+        // Notify if window not focused and message is from guest
+        if (message.sender === 'guest') {
+          const r = roomsData[code];
+          sendNotif(`${r ? r.guestName : 'مهمان'} پیام فرستاد`,
+            message.text || (message.file ? '📎 فایل' : ''));
+        }
       }
     });
     socket.on('admin:room-history', ({ code, guestName, messages }) => {
@@ -430,6 +452,11 @@
     activeChat.style.display = 'flex';
     socket.emit('admin:open-room', { auth: adminAuth, code });
     updateChatStatus(code);
+
+    // Mobile: hide sidebar, show chat area
+    if (window.innerWidth <= 768) {
+      document.getElementById('admin-sidebar').classList.add('hidden-mobile');
+    }
   };
 
   function renderAdminChat(code, guestName, messages) {
@@ -651,6 +678,8 @@
         currentRoomCode = null;
         document.getElementById('active-chat').style.display = 'none';
         document.getElementById('no-chat-placeholder').style.display = 'flex';
+        // Mobile: show sidebar again
+        document.getElementById('admin-sidebar').classList.remove('hidden-mobile');
         renderRoomsList();
         toast('گفتگو حذف شد', 'success');
       }
@@ -660,6 +689,15 @@
   // ── Search ──
   document.getElementById('search-input').addEventListener('input', (e) => {
     renderRoomsList(e.target.value.trim());
+  });
+
+  // ── Mobile back button ──
+  document.getElementById('mobile-back-btn').addEventListener('click', () => {
+    document.getElementById('admin-sidebar').classList.remove('hidden-mobile');
+    currentRoomCode = null;
+    document.getElementById('active-chat').style.display = 'none';
+    document.getElementById('no-chat-placeholder').style.display = 'flex';
+    renderRoomsList();
   });
 
   // ── Lightbox ──

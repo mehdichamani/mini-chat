@@ -16,7 +16,7 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
-const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE_MB || '10') * 1024 * 1024;
+const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE_MB || '100') * 1024 * 1024;
 
 // ─── Uploads Directory ────────────────────────────────────────────────────────
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -37,29 +37,9 @@ const storage = multer.diskStorage({
   }
 });
 
-const allowedMimeTypes = [
-  'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
-  'application/pdf',
-  'application/zip', 'application/x-rar-compressed', 'application/x-7z-compressed',
-  'text/plain', 'text/csv',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.ms-excel',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'video/mp4', 'video/webm',
-  'audio/mpeg', 'audio/ogg', 'audio/wav'
-];
-
 const upload = multer({
   storage,
-  limits: { fileSize: MAX_FILE_SIZE },
-  fileFilter: (req, file, cb) => {
-    if (allowedMimeTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('نوع فایل مجاز نیست'), false);
-    }
-  }
+  limits: { fileSize: MAX_FILE_SIZE }
 });
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
@@ -69,11 +49,13 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(uploadsDir));
 
 // ─── Helper: generate short invite code ──────────────────────────────────────
-function generateCode(len = 8) {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let code = '';
-  for (let i = 0; i < len; i++) code += chars[Math.floor(Math.random() * chars.length)];
-  return code;
+function generateCode() {
+  // ۶ رقم تصادفی (۱۰۰۰۰۰ تا ۹۹۹۹۹۹)
+  return String(Math.floor(Math.random() * 900000) + 100000);
+}
+function generatePassword() {
+  // رمز ۶ رقمی تصادفی
+  return String(Math.floor(Math.random() * 900000) + 100000);
 }
 
 // ─── REST API ─────────────────────────────────────────────────────────────────
@@ -95,7 +77,7 @@ app.post('/api/admin/create-room', (req, res) => {
   let code;
   do { code = generateCode(); } while (rooms[code]);
 
-  const roomPassword = password || generateCode(6);
+  const roomPassword = password || generatePassword();
   rooms[code] = {
     code,
     password: roomPassword,
