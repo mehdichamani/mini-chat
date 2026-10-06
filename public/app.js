@@ -152,11 +152,53 @@ window.renderMessage = function(msg, animate) {
 
   let content = '';
   if (msg.file) content += buildFileHtml(msg.file);
-  if (msg.text) content += `<div class="bubble-text">${escHtml(msg.text)}</div>`;
-  content += `<div class="bubble-time ${isOwn ? '' : 'in-time'}">${formatTime(msg.timestamp)}</div>`;
+  if (msg.text) content += `<div class="bubble-text" id="bubble-text-${msg.id}">${escHtml(msg.text)}</div>`;
+  
+  const textActions = msg.text ? `
+    <span class="bubble-actions">
+      <button type="button" class="msg-action-btn ltr-toggle-btn" title="تغییر جهت چپ‌به‌راست (LTR)">LTR</button>
+      <button type="button" class="msg-action-btn copy-msg-btn" title="کپی متن">📋</button>
+    </span>
+  ` : '';
+
+  content += `<div class="bubble-time ${isOwn ? '' : 'in-time'}">${textActions}<span>${formatTime(msg.timestamp)}</span></div>`;
 
   wrap.innerHTML = `<div class="bubble">${content}</div>`;
   area.appendChild(wrap);
+
+  // Bind actions for text messages
+  if (msg.text) {
+    const textEl = wrap.querySelector('.bubble-text');
+    const ltrBtn = wrap.querySelector('.ltr-toggle-btn');
+    const copyBtn = wrap.querySelector('.copy-msg-btn');
+
+    if (ltrBtn && textEl) {
+      ltrBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        textEl.classList.toggle('ltr');
+        ltrBtn.classList.toggle('active');
+      });
+    }
+
+    if (copyBtn) {
+      copyBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        try {
+          await navigator.clipboard.writeText(msg.text);
+          toast('متن پیام کپی شد', 'success');
+        } catch {
+          // Fallback if clipboard API is restricted
+          const ta = document.createElement('textarea');
+          ta.value = msg.text;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+          toast('متن پیام کپی شد', 'success');
+        }
+      });
+    }
+  }
 
   // Bind image lightbox
   wrap.querySelectorAll('.img-bubble img').forEach(img => {

@@ -146,6 +146,14 @@ app.post('/api/guest/join', (req, res) => {
 app.post('/upload', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, message: 'فایلی آپلود نشد' });
 
+  // تصحیح انکودینگ نام فایل برای کاراکترهای فارسی و یونیکد (رفع باگ latin1 در multer)
+  let originalName = req.file.originalname;
+  try {
+    originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+  } catch (e) {
+    originalName = req.file.originalname;
+  }
+
   const fileUrl = `/uploads/${req.file.filename}`;
   const isImage = req.file.mimetype.startsWith('image/');
   const isVideo = req.file.mimetype.startsWith('video/');
@@ -159,7 +167,7 @@ app.post('/upload', upload.single('file'), (req, res) => {
   res.json({
     success: true,
     url: fileUrl,
-    name: req.file.originalname,
+    name: originalName,
     size: req.file.size,
     type: fileType,
     mimetype: req.file.mimetype
